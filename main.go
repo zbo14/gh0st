@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -27,8 +28,10 @@ func main() {
 	}
 
 	var headers string
+	var hostname string
 	var help bool
-	var hostlist string
+	var insecure bool
+	var wordlist string
 	var maxerrors int
 	var method string
 	var nroutines int
@@ -36,15 +39,17 @@ func main() {
 
 	dir := filepath.Dir(path)
 	lists := filepath.Join(dir, "lists")
-	hlist := filepath.Join(lists, "hosts.txt")
+	defaultlist := filepath.Join(lists, "hosts.txt")
 
 	flag.StringVar(&headers, "H", "", "comma-separated list/file with request headers")
-	flag.StringVar(&method, "X", "GET", "request method to send")
-	flag.IntVar(&maxerrors, "e", 3, "exit after this many errors")
+	flag.StringVar(&method, "X", "GET", "request method to send (default: GET)")
+	flag.IntVar(&maxerrors, "e", 3, "exit after this many errors (default: 3)")
 	flag.BoolVar(&help, "h", false, "show usage information and exit")
-	flag.StringVar(&hostlist, "hl", hlist, "file with list of hosts")
-	flag.IntVar(&nroutines, "n", 40, "number of goroutines to run")
-	flag.StringVar(&statuscodes, "s", "200,204,301,302,307,401,403", "comma-separated whitelist of status codes")
+	flag.StringVar(&hostname, "host", "", "override original hostname (e.g. when <url> contains IP address)")
+	flag.BoolVar(&insecure, "k", false, "allow insecure TLS connections")
+	flag.IntVar(&nroutines, "n", 10, "number of goroutines to run (default: 10)")
+	flag.StringVar(&statuscodes, "s", "200,204,301,302,307,401,403", "comma-separated whitelist of status codes (default: \"200,204,301,302,307,401,403\")")
+	flag.StringVar(&wordlist, "w", defaultlist, "wordlist of hostnames to try")
 
 	flag.Parse()
 
@@ -52,13 +57,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, `gh0st [OPTIONS] <url>
 
 Options:
-  -H   <headers/@file>  comma-separated list/file with request headers
-  -X   <method>         request method to send (default: GET)
-  -e   <int>            exit after this many errors (default: 3)
-  -h                    show usage information and exit
-  -hl  <file>           file with list of hosts
-  -n   <int>            number of goroutines to run (default: 40)
-  -s   <codes>          comma-separated whitelist of status codes (default: "200,204,301,302,307,401,403")`)
+  -H     <headers/@file>  comma-separated list/file with request headers
+  -X     <method>         request method to send (default: GET)
+  -e     <int>            exit after this many errors (default: 3)
+  -h                      show usage information and exit
+  -host  <host>           override original hostname (e.g. when <url> contains IP address)
+  -k                      allow insecure TLS connections
+  -n     <int>            number of goroutines to run (default: 10)
+  -s     <codes>          comma-separated whitelist of status codes (default: "200,204,301,302,307,401,403")
+  -w     <file>           wordlist of hostnames to try`)
 
 		os.Exit(0)
 	}
@@ -99,10 +106,10 @@ Options:
 		}
 	}
 
-	hostdata, err := ioutil.ReadFile(hostlist)
+	hostdata, err := ioutil.ReadFile(wordlist)
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "[!] Can't find hostlist:", hostlist)
+		fmt.Fprintln(os.Stderr, "[!] Can't find wordlist:", wordlist)
 		os.Exit(1)
 	}
 
@@ -130,7 +137,9 @@ Options:
 
 	fmt.Fprintln(os.Stderr, string(banner))
 
-	hostname := url.Hostname()
+	if hostname == "" {
+		hostname = url.Hostname()
+	}
 
 	fmt.Fprintln(os.Stderr, "[-] Original host:", hostname)
 	fmt.Fprintln(os.Stderr, "[-] Method:", method)
@@ -153,10 +162,10 @@ Options:
 	nhosts := len(hostlines) * 2
 
 	if nroutines > nhosts {
-		if nhosts < 40 {
+		if nhosts < 10 {
 			nroutines = nhosts
 		} else {
-			nroutines = 40
+			nroutines = 10
 		}
 
 		fmt.Fprintf(os.Stderr, "[-] Reducing number of goroutines to %d\n", nroutines)
@@ -168,6 +177,14 @@ Options:
 	hosts := make(chan string)
 	errs := make(chan error)
 	results := make(chan *Result)
+
+	if insecure {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+	}
 
 	for i := 0; i < nroutines; i++ {
 		go func() {
@@ -242,43 +259,43 @@ Options:
 	var nerrors = 0
 	var size string
 
-	outer:
+outer:
 	for {
 		select {
-			case res := <-results:
-				if res.done {
-					done++
+		case res := <-results:
+			if res.done {
+				done++
 
-					if done == nroutines {
-						break outer
+				if done == nroutines {
+					break outer
+				}
+
+				continue outer
+			}
+
+			for _, code := range codes {
+				if code == res.status {
+					if res.length > 1000 {
+						size = fmt.Sprintf("%.1fKB", float64(res.length)/1000)
+					} else {
+						size = fmt.Sprintf("%dB", res.length)
 					}
 
+					fmt.Printf("[+] %d (%s) - %s\n", res.status, size, res.host)
 					continue outer
 				}
+			}
 
-				for _, code := range codes {
-					if code == res.status {
-						if res.length > 1000 {
-							size = fmt.Sprintf("%.1fKB", float64(res.length) / 1000)
-						}	else {
-							size = fmt.Sprintf("%dB", res.length)
-						}
+		case err := <-errs:
+			fmt.Fprintf(os.Stderr, "[!] %v\n", err)
 
-						fmt.Printf("[+] %d (%s) - %s\n", res.status, size, res.host)
-						continue outer
-					}
-				}
+			nerrors++
 
-			case err := <-errs:
-				fmt.Fprintf(os.Stderr, "[!] %v\n", err)
-
-				nerrors++
-
-				if nerrors == maxerrors {
-					fmt.Fprintln(os.Stderr, "[!] Reached max number of errors")
-					fmt.Fprintln(os.Stderr, "[!] Exiting")
-					os.Exit(1)
-				}
+			if nerrors == maxerrors {
+				fmt.Fprintln(os.Stderr, "[!] Reached max number of errors")
+				fmt.Fprintln(os.Stderr, "[!] Exiting")
+				os.Exit(1)
+			}
 		}
 	}
 
