@@ -1,3 +1,4 @@
+[::]
 0.
 0.0.0.0
 0:0:0:0:0:0:0:1
@@ -6,7 +7,9 @@
 10.0.0.1
 127.0.0.1
 127.1
+169.254.169.254
 192.168.0.1
+192.168.1.1
 2130706433
 %31%32%37%2E%30%2E%30%2E%31
 admin
@@ -72,6 +75,7 @@ http
 id
 images
 info
+integration
 internal
 internet
 intra
@@ -85,6 +89,7 @@ localhost
 log
 m
 mail
+mail1
 mail2
 mail3
 mailgate
@@ -117,6 +122,7 @@ pbx
 portal
 prod
 production
+s
 s3
 secure
 secureui
@@ -135,9 +141,11 @@ stats
 status
 store
 svn
+syndication
 sys
 syslog
 system
+t
 test
 test1
 test2

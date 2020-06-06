@@ -9,7 +9,18 @@ A command-line utility for virtual host discovery
 ## Usage
 
 ```
+             ('-. .-.            .-')    .-') _
+            ( 00 )  /           ( 00 ). (  00) )
+  ,----.    ,--. ,--.  .----.  (_)---\_)/     '._
+ '  .-./-') |  | |  | /  ..  \ /    _ | |'--...__)
+ |  |_( 00 )|   .|  |.  /  \  .\  :` `. '--.  .--'
+ |  | .--, \|       ||  |  '  | '..`''.)   |  |
+(|  | '. (_/|  .-.  |'  \  /  '.-._)   \   |  |
+ |  '--'  | |  | |  | \  `'  / \       /   |  |
+  `------'  `--' `--'  `---''   `-----'    `--'
+
 gh0st [OPTIONS] <url>
+
 
 Options:
   -H     <headers/@file>  comma-separated list/file with request headers
