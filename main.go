@@ -37,10 +37,10 @@ func main() {
 		panic(err)
 	}
 
-	var basehost string
 	var headers string
 	var help bool
 	var insecure bool
+	var join bool
 	var maxerrors int
 	var method string
 	var mindiff float64
@@ -54,10 +54,10 @@ func main() {
 
 	flag.StringVar(&headers, "H", "", "comma-separated list/file with request headers")
 	flag.StringVar(&method, "X", "GET", "request method to send (default: GET)")
-	flag.StringVar(&basehost, "b", "", "set base host - this will send additional requests with combined Host headers")
 	flag.Float64Var(&mindiff, "d", 0.05, "(default: 0.05)")
 	flag.IntVar(&maxerrors, "e", 0, "print errors and exit after this many")
 	flag.BoolVar(&help, "h", false, "show usage information and exit")
+	flag.BoolVar(&join, "j", false, "send additional requests with hosts joined to URL hostnames")
 	flag.BoolVar(&insecure, "k", false, "allow insecure TLS connections")
 	flag.IntVar(&nroutines, "n", 40, "number of goroutines to run (default: 40)")
 	flag.StringVar(&statuscodes, "s", "200", "comma-separated whitelist of status codes (default: \"200\")")
@@ -71,10 +71,11 @@ func main() {
 Options:
   -H     <headers/@file>  comma-separated list/file with request headers
   -X     <method>         request method to send (default: GET)
-  -b     <host>           set base host - this will send additional requests with combined Host headers
+  -b     <host>           override base hostname when joining (requires -j)
   -d     <float>          (default: 0.05)
   -e     <int>            print errors and exit after this many
   -h                      show usage information and exit
+  -j                      send additional requests with hosts joined to URL hostnames
   -k                      allow insecure TLS connections
   -n     <int>            number of goroutines to run (default: 40)
   -s     <codes>          comma-separated whitelist of status codes (default: "200")
@@ -97,6 +98,8 @@ Options:
 	}
 
 	targets := strings.Split(string(targetdata), "\n")
+	ntargets := len(targets)
+	targeturls := make([]*url.URL, ntargets, ntargets)
 	i := 0
 
 	for _, target := range targets {
@@ -111,11 +114,12 @@ Options:
 			os.Exit(1)
 		}
 
-		targets[i] = targeturl.String()
+		targeturls[i] = targeturl
 		i++
 	}
 
-	targets = targets[:i]
+	targeturls = targeturls[:i]
+	ntargets = len(targeturls)
 
 	var headerlines []string
 
@@ -155,6 +159,12 @@ Options:
 	}
 
 	hosts = hosts[:i]
+	nhosts := len(hosts)
+
+	if join {
+		nhosts *= 2
+	}
+
 	strcodes := strings.Split(statuscodes, ",")
 	ncodes := len(strcodes)
 	codes := make([]int, ncodes, ncodes)
@@ -179,21 +189,9 @@ Options:
 
 	fmt.Fprintln(os.Stderr, string(banner))
 
-	ntargets := len(targets)
-	nhosts := len(hosts)
-
-	if basehost != "" {
-		nhosts *= 2
-	}
-
 	fmt.Fprintf(os.Stderr, "[-] Identified %d targets\n", ntargets)
 	fmt.Fprintf(os.Stderr, "[-] Loaded %d Host headers\n", nhosts)
 	fmt.Fprintf(os.Stderr, "[-] Sending %d requests\n", nhosts*ntargets+ntargets)
-
-	if basehost != "" {
-		fmt.Fprintln(os.Stderr, "[-] Base host:", basehost)
-	}
-
 	fmt.Fprintln(os.Stderr, "[-] Request method:", method)
 
 	headermap := make(map[string]string)
@@ -284,8 +282,8 @@ Options:
 	go func() {
 		wg.Add(ntargets)
 
-		for _, target := range targets {
-			jobs <- &Job{url: target}
+		for _, targeturl := range targeturls {
+			jobs <- &Job{url: targeturl.String()}
 		}
 
 		wg.Wait()
@@ -293,16 +291,16 @@ Options:
 		fmt.Fprintln(os.Stderr, "[-] Finished reference requests")
 
 		for _, host := range hosts {
-			for _, target := range targets {
+			for _, targeturl := range targeturls {
 				jobs <- &Job{
 					host: host,
-					url:  target,
+					url:  targeturl.String(),
 				}
 
-				if basehost != "" {
+				if join {
 					jobs <- &Job{
-						host: strings.Join([]string{host, basehost}, "."),
-						url:  target,
+						host: strings.Join([]string{host, targeturl.Hostname()}, "."),
+						url:  targeturl.String(),
 					}
 				}
 			}
@@ -337,9 +335,7 @@ outer:
 
 			for _, code := range codes {
 				if code == res.status {
-					length, ok := lengths[res.url]
-
-					if ok {
+					if length, ok := lengths[res.url]; ok {
 						if res.length == 0 {
 							continue outer
 						}
@@ -354,13 +350,13 @@ outer:
 						continue outer
 					}
 
-					if length > 1000 {
-						size = fmt.Sprintf("%.1fKB", float64(length)/1000)
+					if res.length > 1000 {
+						size = fmt.Sprintf("%.1fKB", float64(res.length)/1000)
 					} else {
-						size = fmt.Sprintf("%dB", length)
+						size = fmt.Sprintf("%dB", res.length)
 					}
 
-					fmt.Printf("[+] %s | %s | %d (%s)\n", res.url, res.host, res.status, size)
+					fmt.Printf("%d (%s) | %s - %s\n", res.status, size, res.url, res.host)
 					continue outer
 				}
 			}
