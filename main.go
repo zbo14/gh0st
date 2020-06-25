@@ -19,7 +19,7 @@ import (
 type Job struct {
 	done bool
 	host string
-	url  string
+	url  *url.URL
 }
 
 type Result struct {
@@ -27,7 +27,7 @@ type Result struct {
 	host   string
 	length int
 	status int
-	url    string
+	url    *url.URL
 }
 
 func main() {
@@ -233,7 +233,7 @@ Options:
 					return
 				}
 
-				req, err := http.NewRequest(method, job.url, nil)
+				req, err := http.NewRequest(method, job.url.String(), nil)
 
 				if err != nil {
 					errs <- err
@@ -282,7 +282,7 @@ Options:
 		wg.Add(ntargets)
 
 		for _, targeturl := range targeturls {
-			jobs <- &Job{url: targeturl.String()}
+			jobs <- &Job{url: targeturl}
 		}
 
 		wg.Wait()
@@ -293,13 +293,13 @@ Options:
 			for _, targeturl := range targeturls {
 				jobs <- &Job{
 					host: host,
-					url:  targeturl.String(),
+					url:  targeturl,
 				}
 
 				if join {
 					jobs <- &Job{
 						host: strings.Join([]string{host, targeturl.Hostname()}, "."),
-						url:  targeturl.String(),
+						url:  targeturl,
 					}
 				}
 			}
@@ -338,7 +338,8 @@ outer:
 
 			for _, code := range codes {
 				if code == res.status {
-					lengths, ok := all_lengths[res.url]
+					host := res.url.Hostname()
+					lengths, ok := all_lengths[host]
 
 					if ok {
 						for _, length := range lengths {
@@ -349,11 +350,11 @@ outer:
 							}
 						}
 					} else {
-						all_lengths[res.url] = []int{res.length}
+						all_lengths[host] = []int{res.length}
 						continue outer
 					}
 
-					all_lengths[res.url] = append(lengths, res.length)
+					all_lengths[host] = append(lengths, res.length)
 
 					if res.length > 1000 {
 						size = fmt.Sprintf("%.1fKB", float64(res.length)/1000)
@@ -361,7 +362,7 @@ outer:
 						size = fmt.Sprintf("%dB", res.length)
 					}
 
-					fmt.Printf("%d (%s) %s - %s\n", res.status, size, res.url, res.host)
+					fmt.Printf("%d (%s) %s - %s\n", res.status, size, res.url.String(), res.host)
 					continue outer
 				}
 			}
