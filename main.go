@@ -54,7 +54,7 @@ func main() {
 
 	flag.StringVar(&headers, "H", "", "comma-separated list/file with request headers")
 	flag.StringVar(&method, "X", "GET", "request method to send (default: GET)")
-	flag.Float64Var(&mindiff, "d", 0.05, "(default: 0.05)")
+	flag.Float64Var(&mindiff, "d", 0.2, "(default: 0.2)")
 	flag.IntVar(&maxerrors, "e", 0, "print errors and exit after this many")
 	flag.BoolVar(&help, "h", false, "show usage information and exit")
 	flag.BoolVar(&join, "j", false, "send additional requests with hosts joined to URL hostnames")
@@ -71,8 +71,7 @@ func main() {
 Options:
   -H     <headers/@file>  comma-separated list/file with request headers
   -X     <method>         request method to send (default: GET)
-  -b     <host>           override base hostname when joining (requires -j)
-  -d     <float>          (default: 0.05)
+  -d     <float>          (default: 0.2)
   -e     <int>            print errors and exit after this many
   -h                      show usage information and exit
   -j                      send additional requests with hosts joined to URL hostnames
@@ -317,7 +316,7 @@ Options:
 	var nerrors = 0
 	var size string
 
-	lengths := make(map[string]int)
+	all_lengths := make(map[string][]int)
 
 outer:
 	for {
@@ -333,22 +332,28 @@ outer:
 				continue outer
 			}
 
+			if res.length == 0 {
+				continue outer
+			}
+
 			for _, code := range codes {
 				if code == res.status {
-					if length, ok := lengths[res.url]; ok {
-						if res.length == 0 {
-							continue outer
-						}
+					lengths, ok := all_lengths[res.url]
 
-						diff := math.Abs(float64(length-res.length)) * 2 / float64(length+res.length)
+					if ok {
+						for _, length := range lengths {
+							diff := math.Abs(float64(length-res.length)) * 2 / float64(length+res.length)
 
-						if diff < mindiff {
-							continue outer
+							if diff < mindiff {
+								continue outer
+							}
 						}
 					} else {
-						lengths[res.url] = res.length
+						all_lengths[res.url] = []int{res.length}
 						continue outer
 					}
+
+					all_lengths[res.url] = append(lengths, res.length)
 
 					if res.length > 1000 {
 						size = fmt.Sprintf("%.1fKB", float64(res.length)/1000)
@@ -356,7 +361,7 @@ outer:
 						size = fmt.Sprintf("%dB", res.length)
 					}
 
-					fmt.Printf("%d (%s) | %s - %s\n", res.status, size, res.url, res.host)
+					fmt.Printf("%d (%s) %s - %s\n", res.status, size, res.url, res.host)
 					continue outer
 				}
 			}
