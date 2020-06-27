@@ -30,6 +30,10 @@ type Result struct {
 	url    *url.URL
 }
 
+func DontRedirect(req *http.Request, via []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
 func main() {
 	path, err := os.Executable()
 
@@ -210,7 +214,11 @@ Options:
 	fmt.Fprintln(os.Stderr, "[-] Number of goroutines:", nroutines)
 	fmt.Fprintln(os.Stderr, "[-] Minimum diff:", mindiff)
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{
+		CheckRedirect: DontRedirect,
+		Timeout:       5 * time.Second,
+	}
+
 	jobs := make(chan *Job)
 	errs := make(chan error)
 	results := make(chan *Result)
