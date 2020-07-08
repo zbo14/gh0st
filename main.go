@@ -194,7 +194,8 @@ Options:
 
 	fmt.Fprintf(os.Stderr, "[-] Identified %d targets\n", ntargets)
 	fmt.Fprintf(os.Stderr, "[-] Loaded %d Host headers\n", nhosts)
-	fmt.Fprintf(os.Stderr, "[-] Sending %d requests\n", nhosts*ntargets+ntargets)
+	fmt.Fprintf(os.Stderr, "[-] Total requests: %d\n", nhosts*ntargets+ntargets)
+	fmt.Fprintln(os.Stderr, "[-] Status codes:", statuscodes)
 	fmt.Fprintln(os.Stderr, "[-] Request method:", method)
 
 	headermap := make(map[string]string)
@@ -364,8 +365,14 @@ outer:
 
 					all_lengths[host] = append(lengths, res.length)
 
-					if res.length > 1000 {
-						size = fmt.Sprintf("%.1fKB", float64(res.length)/1000)
+					if res.host == "" {
+						continue outer
+					}
+
+					if res.length > 1000000 {
+						size = fmt.Sprintf("%.2fMB", float64(res.length)/1000000)
+					} else if res.length > 1000 {
+						size = fmt.Sprintf("%.2fKB", float64(res.length)/1000)
 					} else {
 						size = fmt.Sprintf("%dB", res.length)
 					}
